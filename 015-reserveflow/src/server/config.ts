@@ -44,6 +44,8 @@ export interface Config {
   trustProxy: boolean;
   turnstileSecret: string;
   turnstileSiteKey: string;
+  /** multiplies every rate limit (automated E2E/load tests only; keep 1 in production) */
+  rateLimitScale: number;
 }
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
@@ -68,6 +70,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     trustProxy: env('TRUST_PROXY', prod ? 'true' : 'false') === 'true',
     turnstileSecret: env('TURNSTILE_SECRET_KEY', ''),
     turnstileSiteKey: env('TURNSTILE_SITE_KEY', ''),
+    rateLimitScale: Math.max(1, Number(env('RATE_LIMIT_SCALE', '1'))),
     ...overrides,
   };
   return cfg;

@@ -149,7 +149,7 @@ export async function rateLimit(deps: AppDeps, key: string, limit: number, windo
      RETURNING count`,
     [k, windowSec],
   );
-  if (r.rows[0].count > limit) throw new AppError(429, 'RATE_LIMITED', 'アクセスが集中しています。しばらく待ってから再度お試しください。');
+  if (r.rows[0].count > limit * (deps.cfg.rateLimitScale ?? 1)) throw new AppError(429, 'RATE_LIMITED', 'アクセスが集中しています。しばらく待ってから再度お試しください。');
 }
 
 export function sendError(reply: FastifyReply, e: unknown, log: (o: unknown, m: string) => void): void {

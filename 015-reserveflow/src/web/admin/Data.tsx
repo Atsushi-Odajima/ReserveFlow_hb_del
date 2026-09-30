@@ -364,10 +364,14 @@ export function SettingsPage() {
   if (loading || !f) return <Loading />;
   const fe = (k: string) => err?.fieldErrors?.[k];
   const bind = (k: string, type: 'text' | 'number' = 'text') => ({ value: f[k] ?? '', onChange: (e: any) => setF({ ...f, [k]: type === 'number' ? Number(e.target.value) : e.target.value }) });
-  const hoursSel = (k: string, opts: number[]) => (
-    <select value={f[k]} onChange={(e) => setF({ ...f, [k]: Number(e.target.value) })} aria-label={k}>
-      {opts.map((m) => <option key={m} value={m}>{m === 0 ? 'なし（直前まで）' : m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`}</option>)}
-    </select>
+  const hoursSel = (k: string, label: string, opts: number[]) => (
+    <Field label={label}>
+      {(p) => (
+        <select {...p} value={f[k]} onChange={(e) => setF({ ...f, [k]: Number(e.target.value) })}>
+          {opts.map((m) => <option key={m} value={m}>{m === 0 ? 'なし（直前まで）' : m % 1440 === 0 ? `${m / 1440}日前` : m % 60 === 0 ? `${m / 60}時間前` : `${m}分前`}</option>)}
+        </select>
+      )}
+    </Field>
   );
   return (
     <div>
@@ -425,12 +429,12 @@ export function SettingsPage() {
           </div>
           <div className="grid-3">
             <Field label="開始時刻の刻み">{(p) => <select {...p} value={f.slotIntervalMin} onChange={(e) => setF({ ...f, slotIntervalMin: Number(e.target.value) })}>{[5, 10, 15, 20, 30, 60].map((m) => <option key={m} value={m}>{m}分</option>)}</select>}</Field>
-            <div className="field"><label>最短受付時間（何分前まで予約可）</label>{hoursSel('minNoticeMin', [0, 30, 60, 120, 180, 360, 720, 1440, 2880])}</div>
+            {hoursSel('minNoticeMin', '最短受付時間（何分前まで予約可）', [0, 30, 60, 120, 180, 360, 720, 1440, 2880])}
             <Field label="予約可能期間（何日先まで）">{(p) => <input {...p} type="number" min={1} max={365} {...bind('maxAdvanceDays', 'number')} />}</Field>
           </div>
           <div className="grid-3">
-            <div className="field"><label>変更締切（お客様）</label>{hoursSel('changeDeadlineMin', [0, 60, 180, 720, 1440, 2880, 4320])}</div>
-            <div className="field"><label>キャンセル締切（お客様）</label>{hoursSel('cancelDeadlineMin', [0, 60, 180, 720, 1440, 2880, 4320])}</div>
+            {hoursSel('changeDeadlineMin', '変更締切（お客様）', [0, 60, 180, 720, 1440, 2880, 4320])}
+            {hoursSel('cancelDeadlineMin', 'キャンセル締切（お客様）', [0, 60, 180, 720, 1440, 2880, 4320])}
             <Field label="リマインド（開始の何時間前）" hint="0 で送らない">{(p) => <input {...p} type="number" min={0} max={168} {...bind('reminderHoursBefore', 'number')} />}</Field>
           </div>
           <Field label="電話番号の入力">{(p) => <select {...p} value={f.phoneRequirement} onChange={(e) => setF({ ...f, phoneRequirement: e.target.value })}><option value="optional">任意</option><option value="required">必須</option><option value="hidden">聞かない</option></select>}</Field>
