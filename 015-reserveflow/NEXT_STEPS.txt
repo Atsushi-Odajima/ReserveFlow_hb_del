@@ -1,0 +1,21 @@
+ReserveFlow 次の作業（再開用メモ） 2026-09-30
+
+■ 人間の判断・作業が必要（勝手に行わない）
+1. iPhone 実機 Safari / Android 実機 Chrome / PC Edge・Firefox・Safari での確認（RELEASE_CHECKLIST.md B-1）
+2. 実メール送信サービス契約＋独自ドメイン認証 → 各通知の到達確認（B-2）
+3. 本番ホスティング契約・デプロイ（有料）、Docker ビルド確認（B-3）
+4. 料金「未確認」項目の再確認、販売条件・規約・表示（B-4, B-5, B-10）
+5. スクリーンリーダー手動確認（B-7）
+
+■ 再開手順（開発）
+  service postgresql start
+  cd 015-reserveflow && npm ci
+  DB: reserveflow_dev / reserveflow_test / reserveflow_e2e / reserveflow_load（ユーザー reserveflow）
+  npm test               # 単体+結合（test DB を初期化）
+  npm run build && npm run test:e2e
+  （負荷）npm run load:seed → 本番ビルドを :8791 で起動（RATE_LIMIT_SCALE=100000, DATABASE_URL=..._load）→ npm run load:run
+
+■ 改善候補（Pro 版・販売後）
+- 2 要素認証、Google/Outlook 双方向同期（OAuth）、事前決済/デポジット（Stripe）、SMS、LINE 連携
+- 氏名部分一致検索の高速化（pg_trgm）、同一事業者への大量同時確定のスループット改善（ロック範囲をスタッフ/リソース単位へ細分化）
+- 予約ページの多言語化（英語）

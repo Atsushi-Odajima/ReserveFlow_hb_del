@@ -27,7 +27,9 @@
     "test:e2e": "playwright test",
     "load:seed": "tsx tests/load/seed-load.ts",
     "load:run": "tsx tests/load/run-load.ts",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "licenses": "node scripts/licenses.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
@@ -39,6 +41,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.1",
     "@types/luxon": "^3.7.6",
     "@types/node": "^26.6.3",

@@ -41,6 +41,7 @@ interface PubProfile {
     changeDeadlineMin: number;
     cancelDeadlineMin: number;
     logoUrl: string | null;
+    turnstileSiteKey: string | null;
   };
   services: PubService[];
   staff: Array<{ id: string; name: string; profile: string }>;
@@ -95,6 +96,7 @@ export default function BookingPage() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ refCode: string; start: string; end: string; manageToken: string | null } | null>(null);
   const [slotsVersion, setSlotsVersion] = useState(0);
+  const [captcha, setCaptcha] = useState<string | null>(null);
   const idemKey = useRef<{ sig: string; key: string } | null>(null);
   const startedAt = useRef(Date.now());
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -189,6 +191,7 @@ export default function BookingPage() {
         idempotencyKey: idemKey.current.key,
         elapsedMs: Date.now() - startedAt.current,
         website: (document.getElementById('rf-website') as HTMLInputElement | null)?.value ?? '',
+        turnstileToken: captcha ?? undefined,
       });
       setDone(r);
       sessionStorage.removeItem(storeKey);
@@ -424,6 +427,7 @@ export default function BookingPage() {
               </label>
             )}
             {errors.consent && <div className="error-text" id="consent-err" role="alert">{errors.consent}</div>}
+            {b.turnstileSiteKey && <Turnstile siteKey={b.turnstileSiteKey} onToken={setCaptcha} />}
             <div aria-live="assertive">
               <ErrorAlert error={submitErr} />
             </div>
@@ -443,7 +447,7 @@ export default function BookingPage() {
             )}
             <div className="sticky-actions">
               <button onClick={back} disabled={busy}>戻る</button>
-              <button className="btn-primary" onClick={submit} disabled={busy} aria-busy={busy}>
+              <button className="btn-primary" onClick={submit} disabled={busy || (!!b.turnstileSiteKey && !captcha)} aria-busy={busy}>
                 {busy ? '送信中…' : '予約を確定する'}
               </button>
             </div>
@@ -664,9 +668,9 @@ function DateTimeStep(props: {
         <button className="btn-sm" onClick={nextMonth} disabled={!canNext} aria-label="次の月">次月 ›</button>
       </div>
       <ErrorAlert error={slots.error} />
-      <div className="days" role="grid" aria-label={`${y}年${m}月の空き状況`} aria-busy={slots.loading}>
+      <div className="days" role="group" aria-label={`${y}年${m}月の空き状況`} aria-busy={slots.loading}>
         {weekdayHeads.map((w) => (
-          <div key={w} className="dh" role="columnheader">{w}</div>
+          <div key={w} className="dh" aria-hidden="true">{w}</div>
         ))}
         {grid.map((d) => {
           const inMonth = d.slice(0, 7) === month;
@@ -677,7 +681,7 @@ function DateTimeStep(props: {
             <button
               key={d}
               className={`day ${selectable ? 'avail' : 'none'}`}
-              style={inMonth ? undefined : { opacity: selectable ? 0.75 : 0.35 }}
+              style={inMonth || selectable ? undefined : { opacity: 0.4 }}
               disabled={!selectable}
               aria-pressed={date === d}
               aria-label={`${dateLabel(d)} ${slots.loading ? '確認中' : outOfRange ? '受付期間外' : n > 0 ? `空きあり ${n}枠` : '空きなし'}`}
@@ -754,4 +758,33 @@ function WaitlistForm({ slug, service, staffId, partySize, initialDate, customer
       </form>
     </section>
   );
+}
+
+declare global {
+  interface Window {
+    turnstile?: { render: (el: HTMLElement, o: Record<string, unknown>) => string; remove: (id: string) => void };
+  }
+}
+
+/** Optional Cloudflare Turnstile widget (only when the operator configured TURNSTILE_SITE_KEY). */
+function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (t: string | null) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let id: string | null = null;
+    const render = () => {
+      if (ref.current && window.turnstile) id = window.turnstile.render(ref.current, { sitekey: siteKey, language: 'ja', callback: (t: string) => onToken(t), 'expired-callback': () => onToken(null) });
+    };
+    if (window.turnstile) render();
+    else {
+      const sc = document.createElement('script');
+      sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      sc.async = true;
+      sc.onload = render;
+      document.head.appendChild(sc);
+    }
+    return () => {
+      if (id && window.turnstile) window.turnstile.remove(id);
+    };
+  }, [siteKey, onToken]);
+  return <div ref={ref} style={{ margin: '12px 0' }} aria-label="ロボットでないことの確認" />;
 }
