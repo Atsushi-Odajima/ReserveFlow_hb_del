@@ -1,0 +1,58 @@
+{
+  "name": "reserveflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ReserveFlow — 予約・顧客・受付・リマインド管理（小規模サービス業向け）",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist-server/server/index.js",
+    "migrate": "node dist-server/server/db/migrate-cli.js",
+    "migrate:dev": "tsx src/server/db/migrate-cli.ts",
+    "jobs:run": "node dist-server/server/jobs/cli.js",
+    "jobs:dev": "tsx src/server/jobs/cli.ts",
+    "seed:sample": "tsx src/server/seed/sample-cli.ts",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "playwright test",
+    "load:seed": "tsx tests/load/seed-load.ts",
+    "load:run": "tsx tests/load/run-load.ts",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/static": "^10.1.5",
+    "fastify": "^5.12.5",
+    "luxon": "^3.7.2",
+    "nodemailer": "^10.0.12",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^26.6.3",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

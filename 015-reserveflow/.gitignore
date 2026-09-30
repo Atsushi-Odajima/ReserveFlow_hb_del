@@ -1,0 +1,9 @@
+node_modules/
+dist-web/
+dist-server/
+test-results/
+playwright-report/
+.env
+*.log
+tests/load/results/*.raw.json
+backups/
