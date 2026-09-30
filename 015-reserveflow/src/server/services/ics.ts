@@ -16,7 +16,7 @@ export function icsText(v: string): string {
   return v
     .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '')
     .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\;')
+    .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n');
 }

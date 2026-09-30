@@ -72,7 +72,7 @@ export function registerAdminDataRoutes(app: FastifyInstance, deps: AppDeps): vo
                   count(*) FILTER (WHERE status IN ('cancelled_by_customer','cancelled_by_business'))::int AS cancelled,
                   count(*) FILTER (WHERE status = 'no_show')::int AS "noShow"
              ${base.replace('FROM bookings b', 'FROM bookings b LEFT JOIN staff st ON st.id = b.staff_id')} GROUP BY 1, 2 ORDER BY 1`,
-          [...args, tz],
+          expr.includes('$4') ? [...args, tz] : args,
         )
       ).rows;
     const byService = await group(`b.service_id::text`, `b.service_snapshot->>'name'`);

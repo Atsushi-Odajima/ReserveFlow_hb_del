@@ -191,6 +191,10 @@ export async function restoreBackup(pool: pg.Pool, targetBusinessId: string, fil
     await lockBusiness(tx, targetBusinessId);
     if (!(await isEmptyBusiness(tx, targetBusinessId))) throw conflict('NOT_EMPTY', '復元先にデータがあります。空の事業者（新規作成直後）にのみ復元できます。');
 
+    // the target only has its sign-up defaults (hours etc.): those are replaced by the backup's configuration
+    for (const t of ['weekly_hours', 'date_exceptions', 'blocks', 'questions', 'waitlist_entries', 'session_occurrences', 'recurrence_rules', 'notifications', 'import_batches'])
+      await tx.query(`DELETE FROM ${t} WHERE business_id = $1`, [targetBusinessId]);
+
     const map = new Map<string, string>([[file.sourceBusinessId, targetBusinessId]]);
     for (const t of BACKUP_TABLES) for (const row of file.data[t]) if (typeof row.id === 'string' && /^[0-9a-f-]{36}$/.test(row.id)) map.set(row.id, randomUUID());
     const remap = (v: unknown): unknown => {
