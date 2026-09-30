@@ -1,6 +1,10 @@
 import { contains, coveredBy, maxConcurrency, mergeIntervals, overlaps, type Interval } from './intervals.js';
 import { addDays, eachDate, localDateOf, localToInstant, localToInstantStrict, minutesOfDay, weekdayOf, MIN } from './time.js';
 import type {
+  EngineAllocation,
+  EngineBlock,
+  EngineBooking,
+  EngineResource,
   EngineInput,
   EngineOccurrence,
   EngineService,
@@ -42,12 +46,91 @@ export class EngineContext {
   private resCache = new Map<string, Interval[]>();
   readonly servicesById: Map<string, EngineService>;
   readonly staffById: Map<string, EngineStaff>;
+  readonly resourcesById: Map<string, EngineResource>;
+  /** allocations per `${kind}:${targetId}`, sorted by start */
+  private allocIdx = new Map<string, EngineAllocation[]>();
+  private maxAllocLen = 0;
+  /** blocks per `${scope}:${targetId ?? ''}` */
+  private blockIdx = new Map<string, EngineBlock[]>();
+  /** group bookings per `${serviceId}|${start}|${staffId ?? '-'}` (slot mode only) */
+  private groupIdx = new Map<string, EngineBooking[]>();
+  private occBookings = new Map<string, EngineBooking[]>();
+  private dayLoad = new Map<string, number>();
+  private bookingById = new Map<string, EngineBooking>();
 
   constructor(input: EngineInput) {
     this.input = input;
     this.tz = input.business.timezone;
     this.servicesById = new Map(input.services.map((s) => [s.id, s]));
     this.staffById = new Map(input.staff.map((s) => [s.id, s]));
+    this.resourcesById = new Map(input.resources.map((r) => [r.id, r]));
+    for (const a of input.allocations) {
+      const k = `${a.kind}:${a.targetId}`;
+      if (!this.allocIdx.has(k)) this.allocIdx.set(k, []);
+      this.allocIdx.get(k)!.push(a);
+      this.maxAllocLen = Math.max(this.maxAllocLen, a.end - a.start);
+    }
+    for (const l of this.allocIdx.values()) l.sort((a, b) => a.start - b.start);
+    for (const b of input.blocks) {
+      const k = `${b.scope}:${b.targetId ?? ''}`;
+      if (!this.blockIdx.has(k)) this.blockIdx.set(k, []);
+      this.blockIdx.get(k)!.push(b);
+    }
+    for (const b of input.bookings) {
+      this.bookingById.set(b.id, b);
+      if (b.occurrenceId) {
+        if (!this.occBookings.has(b.occurrenceId)) this.occBookings.set(b.occurrenceId, []);
+        this.occBookings.get(b.occurrenceId)!.push(b);
+      } else {
+        const g = `${b.serviceId}|${b.start}|${b.staffId ?? '-'}`;
+        if (!this.groupIdx.has(g)) this.groupIdx.set(g, []);
+        this.groupIdx.get(g)!.push(b);
+      }
+      if (b.staffId) {
+        const k = `${b.staffId}|${localDateOf(b.start, this.tz)}`;
+        this.dayLoad.set(k, (this.dayLoad.get(k) ?? 0) + 1);
+      }
+    }
+  }
+
+  /** Allocations of one staff/resource overlapping `w` (excluding one booking's own occupancy). */
+  overlapping(kind: 'staff' | 'resource', targetId: string, w: Interval, excludeBookingId?: string): EngineAllocation[] {
+    const list = this.allocIdx.get(`${kind}:${targetId}`);
+    if (!list) return [];
+    // binary search: first allocation that could overlap (start >= w.start - longest allocation)
+    let lo = 0;
+    let hi = list.length;
+    const from = w.start - this.maxAllocLen;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].start < from) lo = mid + 1;
+      else hi = mid;
+    }
+    const out: EngineAllocation[] = [];
+    for (let i = lo; i < list.length && list[i].start < w.end; i++) {
+      const a = list[i];
+      if (a.end > w.start && !(excludeBookingId && a.bookingId === excludeBookingId)) out.push(a);
+    }
+    return out;
+  }
+
+  blocked(scope: 'business' | 'staff' | 'resource', targetId: string | null, w: Interval): boolean {
+    return (this.blockIdx.get(`${scope}:${targetId ?? ''}`) ?? []).some((b) => overlaps(b, w));
+  }
+
+  groupBookings(serviceId: string, start: number, staffId: string | null, excludeBookingId?: string): EngineBooking[] {
+    return (this.groupIdx.get(`${serviceId}|${start}|${staffId ?? '-'}`) ?? []).filter((b) => b.id !== excludeBookingId);
+  }
+
+  occurrenceBookings(occurrenceId: string, excludeBookingId?: string): EngineBooking[] {
+    return (this.occBookings.get(occurrenceId) ?? []).filter((b) => b.id !== excludeBookingId);
+  }
+
+  staffLoad(staffId: string, date: string, excludeBookingId?: string): number {
+    let n = this.dayLoad.get(`${staffId}|${date}`) ?? 0;
+    const ex = excludeBookingId ? this.bookingById.get(excludeBookingId) : undefined;
+    if (ex && ex.staffId === staffId && localDateOf(ex.start, this.tz) === date) n--;
+    return n;
   }
 
   get timezone(): string {
@@ -122,7 +205,7 @@ function subtractAll(base: Interval[], cut: Interval[]): Interval[] {
 export function effectiveCapacity(ctx: EngineContext, service: EngineService, staffId: string | null): number {
   let cap = service.capacity;
   for (const rid of service.resourceIds) {
-    const r = ctx.input.resources.find((x) => x.id === rid);
+    const r = ctx.resourcesById.get(rid);
     if (r?.personCapacity) cap = Math.min(cap, r.personCapacity);
   }
   if (staffId) {
@@ -196,13 +279,11 @@ export function checkSlot(ctx: EngineContext, req: SlotRequest): SlotResult {
   }
   if (enforceHours) {
     if (!coveredBy(ctx.businessOpen(date), { start, end })) reasons.push(reason('OUTSIDE_BUSINESS_HOURS', '営業時間外です'));
-    if (input.blocks.some((b) => b.scope === 'business' && overlaps(b, occ))) reasons.push(reason('BUSINESS_BLOCKED', '受付停止（ブロック）時間と重なります'));
+    if (ctx.blocked('business', null, occ)) reasons.push(reason('BUSINESS_BLOCKED', '受付停止（ブロック）時間と重なります'));
   }
   if (reasons.length) return { ok: false, reasons };
 
   const excluded = req.excludeBookingId;
-  const activeAllocs = input.allocations.filter((a) => a.bookingId === null || a.bookingId !== excluded);
-  const activeBookings = input.bookings.filter((b) => b.id !== excluded);
 
   // candidate staff
   let staffCandidates: Array<string | null>;
@@ -234,9 +315,7 @@ export function checkSlot(ctx: EngineContext, req: SlotRequest): SlotResult {
     let sessionKey: string | null = null;
     let booked = 0;
     if (service.capacity > 1) {
-      const same = activeBookings.filter(
-        (b) => b.serviceId === service.id && b.start === start && (b.staffId ?? null) === staffId && b.occurrenceId === null,
-      );
+      const same = ctx.groupBookings(service.id, start, staffId, excluded);
       if (same.length) {
         sessionKey = same[0].sessionKey;
         booked = same.reduce((n, b) => n + b.partySize, 0);
@@ -249,18 +328,16 @@ export function checkSlot(ctx: EngineContext, req: SlotRequest): SlotResult {
     if (staff && staffId) {
       if (enforceHours) {
         if (!coveredBy(ctx.staffWorking(staff, date), occ)) staffReasons.push(reason('STAFF_HOURS', 'スタッフの勤務時間外（休憩を含む）です', { staffId }));
-        if (input.blocks.some((b) => b.scope === 'staff' && b.targetId === staffId && overlaps(b, occ)))
+        if (ctx.blocked('staff', staffId, occ))
           staffReasons.push(reason('STAFF_BLOCKED', 'スタッフの休み/ブロックと重なります', { staffId }));
       }
-      const busy = activeAllocs.some(
-        (a) => a.kind === 'staff' && a.targetId === staffId && a.sessionKey !== sessionKey && overlaps(a, occ),
-      );
+      const busy = ctx.overlapping('staff', staffId, occ, excluded).some((a) => a.sessionKey !== sessionKey);
       if (busy) staffReasons.push(reason('STAFF_BUSY', 'スタッフに別の予約があります', { staffId }));
     }
 
     // resources
     for (const rid of service.resourceIds) {
-      const r = input.resources.find((x) => x.id === rid);
+      const r = ctx.resourcesById.get(rid);
       if (!r || r.archived) {
         staffReasons.push(reason('RESOURCE_UNAVAILABLE', '必要な設備/部屋が利用できません', { resourceId: rid }));
         continue;
@@ -268,14 +345,13 @@ export function checkSlot(ctx: EngineContext, req: SlotRequest): SlotResult {
       if (enforceHours) {
         if (r.hasHours && !coveredBy(ctx.resourceHours(r.id, r.weeklyHours, date), occ))
           staffReasons.push(reason('RESOURCE_HOURS', `${r.name} の利用可能時間外です`, { resourceId: rid }));
-        if (input.blocks.some((b) => b.scope === 'resource' && b.targetId === rid && overlaps(b, occ)))
+        if (ctx.blocked('resource', rid, occ))
           staffReasons.push(reason('RESOURCE_BLOCKED', `${r.name} は休止/ブロック中です`, { resourceId: rid }));
       }
       if (!sessionKey) {
         // joining an existing session consumes no extra resource units
         const bySession = new Map<string, Interval>();
-        for (const a of activeAllocs) {
-          if (a.kind !== 'resource' || a.targetId !== rid || !overlaps(a, occ)) continue;
+        for (const a of ctx.overlapping('resource', rid, occ, excluded)) {
           const cur = bySession.get(a.sessionKey);
           bySession.set(a.sessionKey, cur ? { start: Math.min(cur.start, a.start), end: Math.max(cur.end, a.end) } : { start: a.start, end: a.end });
         }
@@ -288,7 +364,7 @@ export function checkSlot(ctx: EngineContext, req: SlotRequest): SlotResult {
       reasons.push(...staffReasons);
       continue;
     }
-    const load = staffId ? activeBookings.filter((b) => b.staffId === staffId && localDateOf(b.start, ctx.timezone) === date).length : 0;
+    const load = staffId ? ctx.staffLoad(staffId, date, excluded) : 0;
     options.push({
       staffId,
       sessionKey,
@@ -408,7 +484,7 @@ export function listSlots(ctx: EngineContext, req: ListRequest): Slot[] {
 // sessions mode (recurring classes / workshops)
 
 export function occurrenceBooked(ctx: EngineContext, occurrenceId: string, excludeBookingId?: string): number {
-  return ctx.input.bookings.filter((b) => b.occurrenceId === occurrenceId && b.id !== excludeBookingId).reduce((n, b) => n + b.partySize, 0);
+  return ctx.occurrenceBookings(occurrenceId, excludeBookingId).reduce((n, b) => n + b.partySize, 0);
 }
 
 export function checkOccurrence(
@@ -429,11 +505,11 @@ export function checkOccurrence(
     const occ = { start: o.occupiedStart, end: o.occupiedEnd };
     if (ctx.input.exceptions.some((e) => e.date === o.localDate && e.kind === 'closed'))
       reasons.push(reason('OUTSIDE_BUSINESS_HOURS', '休業日です'));
-    if (ctx.input.blocks.some((b) => b.scope === 'business' && overlaps(b, occ))) reasons.push(reason('BUSINESS_BLOCKED', '受付停止（ブロック）時間と重なります'));
-    if (o.staffId && ctx.input.blocks.some((b) => b.scope === 'staff' && b.targetId === o.staffId && overlaps(b, occ)))
+    if (ctx.blocked('business', null, occ)) reasons.push(reason('BUSINESS_BLOCKED', '受付停止（ブロック）時間と重なります'));
+    if (o.staffId && ctx.blocked('staff', o.staffId, occ))
       reasons.push(reason('STAFF_BLOCKED', 'スタッフの休み/ブロックと重なります', { staffId: o.staffId }));
     for (const rid of o.resourceIds)
-      if (ctx.input.blocks.some((b) => b.scope === 'resource' && b.targetId === rid && overlaps(b, occ)))
+      if (ctx.blocked('resource', rid, occ))
         reasons.push(reason('RESOURCE_BLOCKED', '設備/部屋が休止/ブロック中です', { resourceId: rid }));
   }
   if (o.staffId) {

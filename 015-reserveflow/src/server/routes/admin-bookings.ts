@@ -792,7 +792,8 @@ export function registerAdminBookingRoutes(app: FastifyInstance, deps: AppDeps):
       await pool.query(
         `SELECT count(*) FILTER (WHERE status <> 'rescheduled' AND start_at >= $3 AND start_at < $4)::int AS "weekBookings",
                 count(*) FILTER (WHERE status = 'no_show' AND start_at > now() - interval '30 days')::int AS "noShow30d"
-           FROM bookings WHERE business_id = $1 AND ($2::uuid IS NULL OR staff_id = $2)`,
+           FROM bookings WHERE business_id = $1 AND ($2::uuid IS NULL OR staff_id = $2)
+            AND start_at >= LEAST($3::timestamptz, now() - interval '30 days') AND start_at < GREATEST($4::timestamptz, now())`,
         [...s, new Date(wr.start), new Date(wr.end)],
       )
     ).rows[0];

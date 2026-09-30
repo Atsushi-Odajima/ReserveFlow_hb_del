@@ -1,0 +1,122 @@
+{
+  "measuredAt": "2026-09-30T02:31:59.704Z",
+  "base": "http://127.0.0.1:8791",
+  "node": "v22.22.2",
+  "dataset": "services 100 / staff 50 / resources 100 / customers 50,000 / bookings 200,000 / notifications 500,000",
+  "results": [
+    {
+      "name": "予約一覧（1か月・50件/頁）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 38,
+      "p95": 74,
+      "max": 76,
+      "errors": 0
+    },
+    {
+      "name": "予約検索（氏名部分一致）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 1037,
+      "p95": 1426,
+      "max": 1446,
+      "errors": 0
+    },
+    {
+      "name": "今日の予約（受付）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 56,
+      "p95": 96,
+      "max": 100,
+      "errors": 0
+    },
+    {
+      "name": "ダッシュボード",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 425,
+      "p95": 566,
+      "max": 625,
+      "errors": 0
+    },
+    {
+      "name": "カレンダー（週・全スタッフ）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 314,
+      "p95": 413,
+      "max": 417,
+      "errors": 0
+    },
+    {
+      "name": "空き検索（1サービス・おまかせ・7日）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 199,
+      "p95": 250,
+      "max": 252,
+      "errors": 0
+    },
+    {
+      "name": "顧客検索（前方一致）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 31,
+      "p95": 43,
+      "max": 46,
+      "errors": 0
+    },
+    {
+      "name": "顧客一覧（頁1）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 15,
+      "p95": 20,
+      "max": 21,
+      "errors": 0
+    },
+    {
+      "name": "公開ページ（プロフィール）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 14,
+      "p95": 21,
+      "max": 24,
+      "errors": 0
+    },
+    {
+      "name": "公開ページ 空き枠（1か月・おまかせ）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 707,
+      "p95": 796,
+      "max": 801,
+      "errors": 0
+    },
+    {
+      "name": "通知履歴（頁1）",
+      "n": 40,
+      "concurrency": 4,
+      "p50": 10,
+      "p95": 17,
+      "max": 17,
+      "errors": 0
+    }
+  ],
+  "sameSlot50": {
+    "ok": 1,
+    "conflict": 49,
+    "other": 0,
+    "totalMs": 4923
+  },
+  "differentSlots100": {
+    "requests": 100,
+    "ok": 100,
+    "conflict": 0,
+    "other": 0,
+    "totalMs": 6473,
+    "p50": 3375,
+    "p95": 6215
+  }
+}
