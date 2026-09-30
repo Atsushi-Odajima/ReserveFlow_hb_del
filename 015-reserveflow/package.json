@@ -13,7 +13,7 @@
     "dev:web": "vite",
     "build": "npm run build:web && npm run build:server",
     "build:web": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "tsc -p tsconfig.server.json && node scripts/copy-sql.mjs",
     "start": "node dist-server/server/index.js",
     "migrate": "node dist-server/server/db/migrate-cli.js",
     "migrate:dev": "tsx src/server/db/migrate-cli.ts",

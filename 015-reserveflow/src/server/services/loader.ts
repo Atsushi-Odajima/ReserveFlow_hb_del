@@ -1,3 +1,4 @@
+import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import { EngineContext } from '../engine/availability.js';
 import { addDays, dayRange } from '../engine/time.js';
@@ -75,30 +76,38 @@ export async function loadEngine(q: Queryable, businessId: string, fromDate: str
   const from = new Date(dayRange(addDays(fromDate, -2), tz).start);
   const to = new Date(dayRange(addDays(toDate, 2), tz).end);
 
-  const [hours, exceptions, staffRows, staffSvc, resRows, svcRows, svcRes, blocks, allocs, bookings, occs] = await Promise.all([
-    q.query(`SELECT owner_kind, owner_id, weekday, start_min, end_min FROM weekly_hours WHERE business_id = $1`, [businessId]),
-    q.query(`SELECT date, kind, intervals FROM date_exceptions WHERE business_id = $1 AND date BETWEEN $2 AND $3`, [businessId, addDays(fromDate, -2), addDays(toDate, 2)]),
-    q.query(`SELECT id, display_name, accepts_bookings, archived_at, sort_order, uses_business_hours, max_participants FROM staff WHERE business_id = $1`, [businessId]),
-    q.query(`SELECT staff_id, service_id FROM staff_services WHERE business_id = $1`, [businessId]),
-    q.query(`SELECT id, name, quantity, person_capacity, has_hours, archived_at FROM resources WHERE business_id = $1`, [businessId]),
-    q.query(
+  // A PoolClient (inside a transaction) must run queries one at a time; a Pool can run them in parallel.
+  const isClient = 'release' in q;
+  const all = async (fns: Array<() => Promise<pg.QueryResult<any>>>): Promise<pg.QueryResult<any>[]> => {
+    if (!isClient) return Promise.all(fns.map((f) => f()));
+    const out: pg.QueryResult<any>[] = [];
+    for (const f of fns) out.push(await f());
+    return out;
+  };
+  const [hours, exceptions, staffRows, staffSvc, resRows, svcRows, svcRes, blocks, allocs, bookings, occs] = await all([
+    () => q.query(`SELECT owner_kind, owner_id, weekday, start_min, end_min FROM weekly_hours WHERE business_id = $1`, [businessId]),
+    () => q.query(`SELECT date, kind, intervals FROM date_exceptions WHERE business_id = $1 AND date BETWEEN $2 AND $3`, [businessId, addDays(fromDate, -2), addDays(toDate, 2)]),
+    () => q.query(`SELECT id, display_name, accepts_bookings, archived_at, sort_order, uses_business_hours, max_participants FROM staff WHERE business_id = $1`, [businessId]),
+    () => q.query(`SELECT staff_id, service_id FROM staff_services WHERE business_id = $1`, [businessId]),
+    () => q.query(`SELECT id, name, quantity, person_capacity, has_hours, archived_at FROM resources WHERE business_id = $1`, [businessId]),
+    () => q.query(
       `SELECT id, name, duration_min, buffer_before_min, buffer_after_min, capacity, max_party_size, requires_staff, booking_mode,
               slot_interval_min, accepts_bookings, is_public, archived_at FROM services WHERE business_id = $1`,
       [businessId],
     ),
-    q.query(`SELECT service_id, resource_id FROM service_resources WHERE business_id = $1`, [businessId]),
-    q.query(`SELECT id, scope, target_id, start_at, end_at FROM blocks WHERE business_id = $1 AND start_at < $3 AND end_at > $2`, [businessId, from, to]),
-    q.query(
+    () => q.query(`SELECT service_id, resource_id FROM service_resources WHERE business_id = $1`, [businessId]),
+    () => q.query(`SELECT id, scope, target_id, start_at, end_at FROM blocks WHERE business_id = $1 AND start_at < $3 AND end_at > $2`, [businessId, from, to]),
+    () => q.query(
       `SELECT kind, target_id, lower(occupied) AS s, upper(occupied) AS e, session_key, booking_id, occurrence_id
          FROM allocations WHERE business_id = $1 AND active AND occupied && tstzrange($2, $3)`,
       [businessId, from, to],
     ),
-    q.query(
+    () => q.query(
       `SELECT id, service_id, staff_id, session_key, occurrence_id, start_at, party_size FROM bookings
         WHERE business_id = $1 AND status = ANY($4) AND occupied_end > $2 AND occupied_start < $3`,
       [businessId, from, to, ACTIVE_STATUSES],
     ),
-    q.query(
+    () => q.query(
       `SELECT o.id, o.service_id, o.staff_id, o.local_date, o.start_at, o.end_at, o.occupied_start, o.occupied_end, o.capacity, o.status,
               COALESCE((SELECT array_agg(a.target_id) FROM allocations a WHERE a.occurrence_id = o.id AND a.kind = 'resource'), '{}') AS resource_ids
          FROM session_occurrences o WHERE o.business_id = $1 AND o.start_at < $3 AND o.end_at > $2`,

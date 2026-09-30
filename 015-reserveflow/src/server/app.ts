@@ -74,7 +74,8 @@ export async function buildApp(cfg: Config, pool: pg.Pool, mailer: Mailer, opts:
     });
   }
   app.setNotFoundHandler((req, reply) => {
-    if (req.url.startsWith('/api/') || !root || req.method !== 'GET') {
+    const path = req.url.split('?')[0];
+    if (path.startsWith('/api/') || path.startsWith('/assets/') || /\.[a-z0-9]{2,5}$/i.test(path) || !root || req.method !== 'GET') {
       reply.status(404).send({ error: { code: 'NOT_FOUND', message: '見つかりません', details: null } });
       return;
     }
